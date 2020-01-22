@@ -4,7 +4,7 @@
 Author:		Yamikani Chinamale
 Date:		22 Jan 2020
 Description:	Script takes parts of a file, uploads them to S3 using the multipart uploading function
-		and combines the parts into one object upon completion.
+		and combines the parts into one object upon completion. [Work in progress]
 				
 		Script is located in some ${SCRIPT_DIR}
 		Parts of the file are located in ${SCRIPT_DIR}/${PARTS_DIR}
