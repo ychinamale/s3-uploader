@@ -15,11 +15,11 @@ To do:          - Make script more robust
 
 COMMENT
 
-BUCKETNAME="es-mmi-data"
+BUCKETNAME="mybucketname"
 LIST_UPLOAD_RESP="list-multipart-uploads.response"
 JSONFILE="mpustruct"
 PARTS_DIR="db_parts"
-FULL_FILE="MX41PRD_MX.2020-01-19.POST_EOD.2020-01-20.dmp"
+FULL_FILE="myfullfile"
 UPLOAD_ID=""
 
 # array for the etags
