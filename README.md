@@ -12,6 +12,6 @@ To run in background: `$ nohup ./s3multiUploader.sh &`, and monitor using `$ les
 Ubuntu 18.04 LTS
 
 ### Disclaimer
-This script is for education purposes only.
+This script is for educational purposes only.
 
 Date: 22-Jan-2020
