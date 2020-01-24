@@ -6,7 +6,7 @@ A script takes parts of a file, uploads them to AWS S3 using the multipart uploa
 ### Execution
 To run script: `$ ./s3multiUploader.sh`
 
-To run in background: `$ ./s3multiUploader.sh &`, and monitor using `$ less nohup.out`
+To run in background: `$ nohup ./s3multiUploader.sh &`, and monitor using `$ less nohup.out`
 
 ### Environment
 Ubuntu 18.04 LTS
