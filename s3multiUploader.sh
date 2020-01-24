@@ -4,142 +4,127 @@
 Author:		Yamikani Chinamale
 Date:		22 Jan 2020
 Description:	Script takes parts of a file, uploads them to S3 using the multipart uploading function
-		and combines the parts into one object upon completion. [Work in progress]
+		and combines the parts into one object upon completion.
 				
 		Script is located in some ${SCRIPT_DIR}
 		Parts of the file are located in ${SCRIPT_DIR}/${PARTS_DIR}
 
+To do:          - Make script more robust
+                - Take arguments for parts dir, full file name, bucket name
+                - Use get opts
+
 COMMENT
 
-BUCKETNAME="mybucket"
+BUCKETNAME="es-mmi-data"
 LIST_UPLOAD_RESP="list-multipart-uploads.response"
 JSONFILE="mpustruct"
 PARTS_DIR="db_parts"
+FULL_FILE="MX41PRD_MX.2020-01-19.POST_EOD.2020-01-20.dmp"
+UPLOAD_ID=""
 
-# array for upload IDs
-declare -a upload_id_list
-
-# array for part files
-declare -a part_file_list
-
-# log file for multi-upload details
-UPLOAD_LOG="multipart-upload.log"
-
-# clear upload log
-> ${UPLOAD_LOG}
+# array for the etags
+declare -a etag_list
 
 #### FUNCTIONS ####
 
-createUploadIDs() {
-        echo "+++ Registering a multipart upload +++"
-        for partfile in `ls "${PARTS_DIR}"`
-        do
-                aws s3api create-multipart-upload --bucket ${BUCKETNAME} --key "db/${partfile}" >> ${UPLOAD_LOG}
-        done
-}
-
-getUploadIDs() {
-        echo "+++ Building  upload_ID array +++"
-        index=1
-
-        while read -r line;
-        do
-                upload_id_list[${index}]=`echo "${line}" | awk '{print $3}'`
-                index=$((index+1))
-        done < ${UPLOAD_LOG}
-}
-
-getPartFiles() {
-        echo "+++ Building part files array +++"
-        index=1
-
-        for partfile in `ls "${PARTS_DIR}"`;
-        do
-                part_file_list[${index}]="${partfile}"
-                index=$((index+1))
-        done
+getUploadID() {
+        echo "+++ Obtaining Upload ID +++"
+        UPLOAD_ID=`aws s3api create-multipart-upload --bucket ${BUCKETNAME} --key "db/${FULL_FILE}" | awk '{print $3}'`
 }
 
 uploadAllParts() {
         echo "+++ Uploading all part files +++"
         index=1
-        for partfile in "${part_file_list[@]}"
+        numParts=`ls ${PARTS_DIR} | wc -l`
+
+        buildJSONHeader
+
+        for partfile in `ls "${PARTS_DIR}"`;
         do
-                aws s3api upload-part --bucket ${BUCKETNAME} --key "db/${partfile}" --part-number ${index} --body "${PARTS_DIR}/${partfile}" --upload-id "${upload_id_list[$index]}"
+                etag_list[${index}]=`aws s3api upload-part --bucket ${BUCKETNAME} --key "db/${FULL_FILE}" --part-number ${index} --body "${PARTS_DIR}/${partfile}" --upload-id "${UPLOAD_ID}"`
+
+                if [[ $index -ne $numParts ]]
+                then
+                        addJSONEntry "${etag_list[$index]}" false
+                else
+                        addJSONEntry "${etag_list[$index]}" true
+                fi
+
                 index=$((index+1))
-                echo "............ Sleeping for 15 seconds ..............."
-                echo ""
-                sleep 15
+                sleep 5
         done
+
+        buildJSONFooter
 }
 
 buildJSONHeader(){
-
-	# building the header
-	cat << HEADER > ${JSONFILE}
-	{
-	  "Parts": [
+cat << HEADER > ${JSONFILE}
+{
+        "Parts": [
 HEADER
 }
 
 
 addJSONEntry(){
-	etag_response=${1}
-	cat << ENTRY >> ${JSONFILE}
-	{
-	  "ETag": ${etag_response},
-	  "PartNumber": ${index}
-	},
+        etag_response=${1}
+        isLast=${2}
+
+        if [[ ${isLast} = false ]]
+        then
+
+cat << ENTRY >> ${JSONFILE}
+                {
+                        "ETag": ${etag_response},
+                        "PartNumber": ${index}
+                },
 ENTRY
+
+        else
+
+cat << ENTRY >> ${JSONFILE}
+                {
+                        "ETag": ${etag_response},
+                        "PartNumber": ${index}
+                }
+ENTRY
+
+        fi
 }
 
 buildJSONFooter(){
-	cat << FOOTER >> ${JSONFILE}
-		]
-	}
+cat << FOOTER >> ${JSONFILE}
+        ]
+}
 FOOTER
 }
 
 completeUpload(){
         echo "+++ Completing the multi-part upload +++"
         index=1
-
-        buildJSONHeader
-
+        
         for partfile in `ls ${PARTS_DIR}`
         do
-                etag=`aws s3api complete-multipart-upload --multipart-upload file://${JSONFILE} --bucket ${BUCKETNAME} --key "db/${partfile}" --upload-id "${upload_id_list[$index]}"`
-				
-		addJSONEntry ${etag}
-				
+                aws s3api complete-multipart-upload --multipart-upload "file://${JSONFILE}" --bucket ${BUCKETNAME} --key "db/${FULL_FILE}" --upload-id "${UPLOAD_ID}"
                 index=$((index+1))
                 sleep 5
         done
-		
-        buildJSONFooter
 }
 
-removeRecentUploads(){
+removeTheseUploads(){
         echo "+++ Aborting multipart uploads for our session +++"
         index=1
 
         for partfile in `ls "${PARTS_DIR}"`
         do
-                aws s3api abort-multipart-upload --bucket "${BUCKETNAME}" --key "db/${partfile}" --upload-id "${upload_id_list[$index]}"
+                aws s3api abort-multipart-upload --bucket "${BUCKETNAME}" --key "db/${FULL_FILE}" --upload-id "${UPLOAD_ID}"
                 index=$((index+1))
         done
 }
 
 removeAllUploads(){
-		
         echo "+++ Aborting all zombie multi-part uploads +++"
 
-        aws s3api list-multipart-uploads --bucket "${BUCKETNAME}" > ${LIST_UPLOAD_RESP}
-
-        # removing unnecessary lines
-        sed -i "s|None.*||g" ${LIST_UPLOAD_RESP}
-        sed -i "s|OWNER.*||g" ${LIST_UPLOAD_RESP}
-        sed -i "s|INITIATOR.*||g" ${LIST_UPLOAD_RESP}
+        getUploadList
 
         while read -r line
         do
@@ -152,29 +137,23 @@ removeAllUploads(){
         done < ${LIST_UPLOAD_RESP}
 }
 
+getUploadList(){
+        aws s3api list-multipart-uploads --bucket "${BUCKETNAME}" > ${LIST_UPLOAD_RESP}
 
-showUploadIDs() {
-        echo "+++ Displaying all upload ID array +++"
-        for i in "${upload_id_list[@]}"
-        do
-                echo "$i"
-        done
+        # removing unnecessary lines
+        sed -i "s|None.*||g" ${LIST_UPLOAD_RESP}
+        sed -i "s|OWNER.*||g" ${LIST_UPLOAD_RESP}
+        sed -i "s|INITIATOR.*||g" ${LIST_UPLOAD_RESP}
 }
 
-showPartFiles() {
-        echo "+++ Displaying part file array +++"
-        for i in "${part_file_list[@]}"
-        do
-                echo "$i"
-        done
+showS3UploadList(){
+        getUploadList
+        cat ${LIST_UPLOAD_RESP}
 }
 
+#### MAIN STARTS HERE ####
 
-#createUploadIDs
-#getUploadIDs
-#getPartFiles
-#showUploadIDs
-#showPartFiles
+#getUploadID
 #uploadAllParts
 #completeUpload
-#removeRecentUploads
+#removeAllUploads
