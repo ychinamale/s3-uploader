@@ -1,7 +1,7 @@
 # s3-multipart-upload
 
 ### Description
-A script takes parts of a file, uploads them to AWS S3 using the multipart uploading function and combines the parts into one object upon completion.
+A script that takes parts of a file, uploads them to AWS S3 using the multipart uploading function and combines the parts into one object upon completion.
 
 ### Execution
 To run script: `$ ./s3multiUploader.sh`
